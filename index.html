@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="manifest" href="manifest.json">
+    <title>Ajopäiväkirja Pro</title>
+    <style>
+        :root { --primary: #2c3e50; --secondary: #e67e22; --success: #27ae60; --info: #3498db; --bg: #f4f7f6; }
+        body { font-family: -apple-system, system-ui, sans-serif; margin: 0; background: var(--bg); color: #333; overflow-x: hidden; -webkit-tap-highlight-color: transparent; }
+        .container { padding: 10px; box-sizing: border-box; width: 100%; max-width: 600px; margin: auto; padding-bottom: 100px; }
+        .profile-bar { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+        .profile-bar input { padding: 12px; border: 1px solid #ccc; border-radius: 8px; font-size: 16px; width: 100%; box-sizing: border-box; }
+        .header-controls { background: var(--primary); color: white; padding: 12px; border-radius: 12px; margin-bottom: 15px; }
+        .summary-box { text-align: center; background: var(--secondary); padding: 8px; border-radius: 6px; font-weight: bold; font-size: 1.1rem; margin-bottom: 10px; }
+        .nav-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        select { padding: 10px; border-radius: 8px; font-size: 16px; border: none; background: white; }
+        .report-btn { background: #9b59b6; color: white; border: none; padding: 10px; border-radius: 8px; font-weight: bold; }
+        .table-card { background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .table-wrapper { overflow-x: auto; width: 100%; -webkit-overflow-scrolling: touch; }
+        table { width: 100%; border-collapse: collapse; min-width: 580px; }
+        th { background: #f8f9fa; padding: 10px; font-size: 10px; text-transform: uppercase; color: #666; }
+        td { padding: 8px 5px; border-bottom: 1px solid #eee; text-align: center; }
+        input[type="text"], input[type="number"] { width: 95%; padding: 12px 5px; border: 1px solid #f0f0f0; border-radius: 4px; font-size: 16px; }
+        .btn-add { background: var(--success); color: white; border: none; width: 35px; height: 35px; border-radius: 50%; font-weight: bold; font-size: 24px; display: flex; align-items: center; justify-content: center; margin: auto; }
+        .btn-purku { background: var(--info); color: white; border: none; padding: 10px 4px; border-radius: 6px; width: 100%; font-size: 12px; font-weight: bold; }
+        .btn-done { background: var(--success); color: white; border: none; padding: 12px 5px; border-radius: 6px; font-weight: bold; width: 100%; font-size: 12px; }
+        .row-finished { background-color: #f0fff4 !important; }
+        .row-jatkuu { border-left: 5px solid var(--secondary); }
+        #raporttiOverlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: white; z-index: 2000; overflow-y: auto; padding: 15px; box-sizing: border-box; }
+        .raportti-kortti { border: 1px solid #eee; padding: 12px; margin-bottom: 10px; border-radius: 10px; background: #fff; }
+        @media print { .no-print { display: none; } }
+    </style>
+</head>
+<body>
+
+<div class="container no-print">
+    <div class="profile-bar">
+        <input type="text" id="kuljettaja" placeholder="Kuljettaja" onchange="tallennaProfiili()">
+        <input type="text" id="auto" placeholder="Rekkari" onchange="tallennaProfiili()">
+    </div>
+    <div class="header-controls">
+        <div class="summary-box">Yhteensä: <span id="jaksoKm">0</span> km</div>
+        <div class="nav-row">
+            <select id="valitseKuukausi" onchange="paivitaNakyma()"></select>
+            <button class="report-btn" onclick="naytaSiistiRaportti()">📄 RAPORTTI</button>
+        </div>
+    </div>
+    <div class="table-card"><div class="table-wrapper"><table><thead><tr><th>+</th><th>PVM</th><th>LÄHTÖ</th><th>PURUT</th><th>MÄÄRÄNPÄÄ</th><th>KM</th><th>YLI</th><th>TILA</th><th></th></tr></thead><tbody id="taulukkoRunko"></tbody></table></div></div>
+    <button style="width:100%; padding:15px; background:#7f8c8d; color:white; border:none; border-radius:10px; font-weight:bold; margin-top:20px;" onclick="vieTiedot()">💾 TALLENNA VARMUUSKOPIO</button>
+</div>
+
+<div id="purkuModal" style="display:none; position:fixed; background:rgba(0,0,0,0.85); width:100%; height:100%; top:0; left:0; z-index:3000;">
+    <div style="background:white; width:90%; max-width:340px; margin:80px auto; padding:20px; border-radius:15px; box-sizing: border-box;">
+        <h3 style="margin-top:0">Purkupaikat</h3>
+        <div id="purkuLista"></div>
+        <button onclick="lisaaPurkuRivi()" style="width:100%; padding:12px; margin-top:10px; border:2px dashed #ddd; background:none; border-radius:8px;">+ Lisää paikka</button>
+        <button onclick="suljeModal()" style="width:100%; padding:15px; margin-top:20px; background:var(--success); color:white; border:none; border-radius:10px; font-weight:bold;">VALMIS</button>
+    </div>
+</div>
+
+<div id="raporttiOverlay">
+    <div class="no-print" style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:20px;">
+        <button onclick="document.getElementById('raporttiOverlay').style.display='none'" style="background:#e74c3c; color:white; border:none; padding:12px; border-radius:8px;">SULJE</button>
+        <button onclick="window.print()" style="background:var(--primary); color:white; border:none; padding:12px; border-radius:8px;">TULOS PDF</button>
+    </div>
+    <div id="raporttiPaperi">
+        <h2>AJORAPORTTI</h2>
+        <p id="rKuljettajaInfo"></p>
+        <hr>
+        <div id="raporttiData"></div>
+        <h3 id="rYhteensa" style="text-align:right;"></h3>
+    </div>
+</div>
+
+<script>
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('sw.js').catch(() => {});
+    }
+
+    let sovellusData = JSON.parse(localStorage.getItem('ajopro_v2')) || {};
+    let aktiivinenID = ""; let aktiivinenIdx = 0;
+
+    const kkNimet = ["Tammikuu","Helmikuu","Maaliskuu","Huhtikuu","Toukokuu","Kesäkuu","Heinäkuu","Elokuu","Syyskuu","Lokakuu","Marraskuu","Joulukuu"];
+    const sel = document.getElementById('valitseKuukausi');
+    kkNimet.forEach((n,i) => { let o = new Option(n,i); if(i===new Date().getMonth()) o.selected=true; sel.add(o); });
+
+    window.onload = () => {
+        document.getElementById('kuljettaja').value = localStorage.getItem('driver_name') || "";
+        document.getElementById('auto').value = localStorage.getItem('truck_reg') || "";
+        paivitaNakyma();
+    };
+
+    function tallennaProfiili() {
+        localStorage.setItem('driver_name', document.getElementById('kuljettaja').value);
+        localStorage.setItem('truck_reg', document.getElementById('auto').value);
+    }
+
+    function paivitaNakyma() {
+        const kk = parseInt(document.getElementById('valitseKuukausi').value);
+        const runko = document.getElementById('taulukkoRunko');
+        runko.innerHTML = "";
+        let kokonaisKm = 0;
+        let pvm = new Date(2026, kk, 1);
+        while (pvm.getMonth() === kk) {
+            const id = pvm.toISOString().split('T')[0];
+            const pvmNaytto = pvm.getDate() + "." + (pvm.getMonth() + 1) + ".";
+            if (!sovellusData[id]) sovellusData[id] = [{ alku: '', loppu: '', km: 0, purut: [], jatkuu: false, valmis: false }];
+            sovellusData[id].forEach((k, idx) => {
+                kokonaisKm += (Number(k.km) || 0);
+                const tr = document.createElement('tr');
+                if(k.valmis) tr.className = "row-finished";
+                if(k.jatkuu) tr.classList.add("row-jatkuu");
+                tr.innerHTML = `
+                    <td>${idx === 0 ? `<button class="btn-add" onclick="lisaaRivi('${id}')">+</button>` : ''}</td>
+                    <td style="font-weight:bold;">${idx === 0 ? pvmNaytto : ''}</td>
+                    <td><input type="text" value="${k.alku||''}" onchange="tallenna('${id}',${idx},'alku',this.value)"></td>
+                    <td><button class="btn-purku" onclick="avaaPurku('${id}',${idx})">${k.purut ? k.purut.length : 0} kpl</button></td>
+                    <td><input type="text" value="${k.loppu||''}" onchange="tallenna('${id}',${idx},'loppu',this.value)"></td>
+                    <td><input type="number" value="${k.km||''}" onchange="tallenna('${id}',${idx},'km',this.value)"></td>
+                    <td><input type="checkbox" ${k.jatkuu?'checked':''} onchange="tallenna('${id}',${idx},'jatkuu',this.checked)"></td>
+                    <td><button class="btn-done" onclick="tallenna('${id}',${idx},'valmis',true)">${k.valmis ? 'OK' : 'VALMIS'}</button></td>
+                    <td>${idx > 0 ? `<button onclick="poistaRivi('${id}',${idx})" style="border:none; background:none;">❌</button>` : ''}</td>
+                `;
+                runko.appendChild(tr);
+            });
+            pvm.setDate(pvm.getDate() + 1);
+        }
+        document.getElementById('jaksoKm').textContent = kokonaisKm;
+    }
+
+    function tallenna(id, idx, f, v) {
+        sovellusData[id][idx][f] = v;
+        localStorage.setItem('ajopro_v2', JSON.stringify(sovellusData));
+        if(f === 'valmis' || f === 'jatkuu') paivitaNakyma();
+    }
+
+    function lisaaRivi(id) { sovellusData[id].push({ alku: '', loppu: '', km: 0, purut: [], jatkuu: false, valmis: false }); paivitaNakyma(); }
+    function avaaPurku(id, idx) {
+        aktiivinenID = id; aktiivinenIdx = idx;
+        const lista = document.getElementById('purkuLista'); lista.innerHTML = "";
+        const nykyiset = sovellusData[id][idx].purut || [];
+        nykyiset.forEach((p, i) => {
+            const inp = document.createElement('input'); inp.value = p; inp.className = "p-input"; inp.style.width="100%"; inp.style.marginBottom="10px"; inp.style.padding="12px";
+            inp.onchange = () => {
+                const inputs = document.querySelectorAll('.p-input');
+                sovellusData[id][idx].purut = Array.from(inputs).map(el => el.value).filter(v => v.trim() !== "");
+                localStorage.setItem('ajopro_v2', JSON.stringify(sovellusData));
+            };
+            lista.appendChild(inp);
+        });
+        if(nykyiset.length === 0) lisaaPurkuRivi();
+        document.getElementById('purkuModal').style.display = 'block';
+    }
+    function lisaaPurkuRivi() { if(!sovellusData[aktiivinenID][aktiivinenIdx].purut) sovellusData[aktiivinenID][aktiivinenIdx].purut = []; sovellusData[aktiivinenID][aktiivinenIdx].purut.push(""); avaaPurku(aktiivinenID, aktiivinenIdx); }
+    function suljeModal() { document.getElementById('purkuModal').style.display = 'none'; paivitaNakyma(); }
+    function naytaSiistiRaportti() {
+        document.getElementById('rKuljettajaInfo').innerHTML = `<b>Kuljettaja:</b> ${localStorage.getItem('driver_name') || ''} | <b>Auto:</b> ${localStorage.getItem('truck_reg') || ''}`;
+        const s = document.getElementById('raporttiData'); s.innerHTML = ""; let total = 0;
+        Object.keys(sovellusData).sort().forEach(id => {
+            sovellusData[id].forEach(k => {
+                if(k.alku || k.km > 0) {
+                    total += (Number(k.km) || 0);
+                    const d = document.createElement('div'); d.className = "raportti-kortti";
+                    let pvmTeksti = new Date(id).toLocaleDateString('fi-FI', {day:'numeric', month:'numeric'});
+                    if(k.jatkuu) { let huom = new Date(id); huom.setDate(huom.getDate() + 1); pvmTeksti += " – " + huom.toLocaleDateString('fi-FI', {day:'numeric', month:'numeric'}); }
+                    d.innerHTML = `<b>📅 ${pvmTeksti} - ${k.km} km</b><br>${k.alku} ➔ ${k.loppu || (k.jatkuu ? '...' : '')}<br><small>Purut: ${k.purut ? k.purut.join(', ') : '-'}</small>`;
+                    s.appendChild(d);
+                }
+            });
+        });
+        document.getElementById('rYhteensa').innerHTML = `YHTEENSÄ: ${total} km`;
+        document.getElementById('raporttiOverlay').style.display = 'block';
+    }
+    function poistaRivi(id, idx) { if(confirm("Poista?")) { sovellusData[id].splice(idx, 1); localStorage.setItem('ajopro_v2', JSON.stringify(sovellusData)); paivitaNakyma(); } }
+    function vieTiedot() { const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(sovellusData)); const a = document.createElement('a'); a.setAttribute("href", dataStr); a.setAttribute("download", "ajovarmuuskopio.json"); a.click(); }
+</script>
+</body>
+</html>
